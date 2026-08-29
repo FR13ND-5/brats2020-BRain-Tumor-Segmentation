@@ -103,7 +103,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", required=True, choices=MODELS)
     parser.add_argument("--checkpoint", default=None,
-                        help="default: outputs/<model>/best.pth")
+                        help="default: outputs/<model>/<model>_best.pth")
     parser.add_argument("--data-dir", default=str(DEFAULT_DATA_DIR))
     parser.add_argument("--output-dir", default="outputs")
     parser.add_argument("--batch-size", type=int, default=32)
@@ -116,7 +116,16 @@ def main():
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     output_dir = Path(args.output_dir) / args.model
-    checkpoint_path = args.checkpoint or output_dir / "best.pth"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    checkpoint_path = Path(args.checkpoint) if args.checkpoint else None
+    if checkpoint_path is None:  # accept the legacy unprefixed name too
+        for name in (f"{args.model}_best.pth", "best.pth"):
+            if (output_dir / name).exists():
+                checkpoint_path = output_dir / name
+                break
+        else:
+            raise SystemExit(f"No checkpoint found in {output_dir}. "
+                             f"Train first, or pass --checkpoint.")
 
     checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
     model = get_model(args.model).to(device)

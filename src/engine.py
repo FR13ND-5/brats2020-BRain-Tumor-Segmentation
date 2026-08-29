@@ -80,11 +80,14 @@ def fit(model, model_name, train_loader, val_loader, criterion, epochs, lr,
         if val_metrics["dice"] > best_dice:
             best_dice = val_metrics["dice"]
             epochs_without_improvement = 0
+            # model-prefixed name so checkpoints stay distinct when collected
+            # together (e.g. uploaded as GitHub release assets)
+            checkpoint_name = f"{model_name}_best.pth"
             torch.save({"model": model_name, "epoch": epoch,
                         "state_dict": model.state_dict(),
                         "val_metrics": val_metrics},
-                       output_dir / "best.pth")
-            print(f"  saved best.pth (dice={best_dice:.4f})")
+                       output_dir / checkpoint_name)
+            print(f"  saved {checkpoint_name} (dice={best_dice:.4f})")
         else:
             epochs_without_improvement += 1
             if epochs_without_improvement >= patience:

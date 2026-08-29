@@ -6,12 +6,12 @@
 ![Dataset](https://img.shields.io/badge/Dataset-BraTS2020-blue)
 ![Task](https://img.shields.io/badge/Task-Semantic%20Segmentation-purple)
 
-Four segmentation architectures (U-Net, Attention U-Net, UNet++, and a
-TransUNet-style hybrid) implemented from scratch in PyTorch and trained one
-after another under identical conditions: same data split, same loss, same
-optimizer, same metrics, same training loop. Any difference in results
-therefore comes from the architecture itself. The point of the project is to
-compare the four on accuracy, cost, and mechanism.
+This repository trains four segmentation architectures on BraTS2020 and
+compares them: U-Net, Attention U-Net, UNet++, and a TransUNet-style hybrid.
+All four are written from scratch in PyTorch and trained one after another
+under the same conditions, sharing a data split, a loss, an optimizer, a set
+of metrics, and a single training loop. A difference in the results can
+therefore only come from the architecture.
 
 ## About the task
 
@@ -21,43 +21,43 @@ any) it belongs to.
 
 The input has 4 channels, one per MRI modality: T1, T1ce (contrast
 enhanced), T2, and FLAIR. Each modality makes different tissue properties
-visible, so all four are fed to the network together. The output is 3 binary
+visible, so all four go into the network together. The output is 3 binary
 masks, one per tumor sub-region: NCR/NET (necrotic and non-enhancing tumor
 core, BraTS label 1), ED (peritumoral edema, label 2), and ET (enhancing
-tumor, label 4). These channels are disjoint one-hot labels. We checked this
-directly against the data; they are not the nested WT/TC/ET regions used in
-some BraTS papers.
+tumor, label 4). Those three channels are disjoint one-hot labels, checked
+against the data itself, and not the nested WT/TC/ET regions that some BraTS
+papers use.
 
 ## The four architectures
 
-| Model | Params | Key mechanism | In one line |
+| Model | Params | Key mechanism | What changes |
 | --- | --- | --- | --- |
-| U-Net | 31.0M | Plain skip connections | Copies encoder features straight to the decoder at each scale |
-| Attention U-Net | 31.4M | Attention gates on skips | The decoder gates the skips, suppressing regions it considers irrelevant |
-| UNet++ | 9.2M | Nested dense skip pathways | Encoder features are refined through intermediate nodes before the decoder sees them |
-| TransUNet (style) | 64.9M | Transformer at the bottleneck | Self-attention gives every position a global receptive field |
+| U-Net | 31.0M | Plain skip connections | Encoder features go to the decoder untouched |
+| Attention U-Net | 31.4M | Attention gates on skips | The decoder decides how much of each skip to let through |
+| UNet++ | 9.2M | Nested dense skip pathways | Skips pass through intermediate conv nodes first |
+| TransUNet (style) | 64.9M | Transformer at the bottleneck | Every position can attend to every other position |
 
-In short:
+The longer version:
 
 1. U-Net (Ronneberger et al., 2015) is the baseline encoder-decoder. Skip
-   connections restore the spatial detail lost to pooling, but they copy
-   everything, relevant or not.
-2. Attention U-Net (Oktay et al., 2018) keeps the same backbone but passes
-   each skip through an additive attention gate driven by the decoder
-   signal. Irrelevant encoder activations are suppressed before
-   concatenation.
+   connections restore the spatial detail that pooling throws away, but they
+   copy everything, relevant or not.
+2. Attention U-Net (Oktay et al., 2018) keeps that backbone and adds an
+   additive attention gate on each skip, driven by the decoder signal. The
+   gate suppresses encoder activations it scores as irrelevant before the
+   concatenation happens.
 3. UNet++ (Zhou et al., 2018) replaces each plain skip with a chain of
-   nested conv nodes that gradually close the semantic gap between shallow
-   encoder features and deep decoder features. It is the smallest model here
-   because its filter counts start at 32 instead of 64.
-4. The TransUNet-style model (after Chen et al., 2021) uses a CNN encoder
+   nested conv nodes, so encoder features are refined in stages instead of
+   jumping straight across the semantic gap to the decoder. It is the
+   smallest model here because its filter counts start at 32 rather than 64.
+4. The TransUNet-style model (after Chen et al., 2021) runs a CNN encoder
    for local features, flattens the 15×15 bottleneck map into 225 tokens,
-   runs them through a 4-layer Transformer encoder, and restores resolution
-   with a U-Net decoder plus skips. It buys global context at the cost of
-   double the parameters.
+   pushes them through a 4-layer Transformer encoder, and then restores
+   resolution with a U-Net decoder and its skips. Global context costs it
+   double the parameters of U-Net.
 
-Each model's source file has a docstring restating its mechanism, which is
-where the pros/cons analysis in the report starts from.
+Every model file carries a docstring describing its mechanism, which is
+where the pros and cons discussion in the report starts.
 
 ## Repository structure
 
@@ -101,8 +101,8 @@ pip install -r requirements.txt   # torch, h5py, numpy, matplotlib, tqdm
 python3 test_smoke.py
 ```
 
-Training wants a CUDA GPU. Mixed precision (AMP) is used when CUDA is
-available; everything falls back to CPU otherwise, just slowly.
+Training really wants a CUDA GPU. The code switches on mixed precision (AMP)
+when CUDA is available and falls back to CPU otherwise, just slowly.
 
 ## Dataset
 
@@ -122,11 +122,11 @@ The code expects the data at
 `--data-dir` override. Download and extraction instructions, plus the exact
 directory layout, are in [dataset/README.md](dataset/README.md).
 
-The train/val split is done by patient volume, never by slice. Adjacent
-slices of one patient are nearly identical, so a slice-level split would
-leak training data into validation. With the fixed seed 42 the split is 295
-train / 74 val volumes (45,725 / 11,470 slices), and it is identical for
-every model.
+The train/val split works on patient volumes, never on individual slices.
+Adjacent slices of one patient are nearly identical, so splitting by slice
+would leak training data straight into validation. With the fixed seed 42
+the split comes out at 295 train / 74 val volumes (45,725 / 11,470 slices),
+and it stays identical for every model.
 
 ## Usage
 
@@ -152,20 +152,20 @@ python3 train.py --model transunet
 | `--seed` | 42 | keep identical across models for a fair comparison |
 | `--limit` | off | cap files per split; quick sanity run: `--limit 200 --epochs 2` |
 
-Training details, identical for all models: Dice+BCE loss, Adam, AMP,
-flip/rot90 augmentation on the training set only, best checkpoint selected
-by mean validation Dice.
+The training setup is identical for all four models: Dice+BCE loss, Adam,
+AMP, flip and rot90 augmentation on the training set only, and the best
+checkpoint chosen by mean validation Dice.
 
-### 2. Evaluate + visualize
+### 2. Evaluate and visualize
 
 ```bash
-python3 inference.py --model unet          # uses outputs/unet/best.pth
+python3 inference.py --model unet          # uses outputs/unet/unet_best.pth
 ```
 
-Recomputes all metrics on the unseen validation patients, both pooled over
-all pixels and per patient (mean and standard deviation of Dice across the
-74 validation volumes, which is how BraTS results are usually reported).
-It also measures inference speed in ms/slice and saves side-by-side
+This recomputes every metric on the unseen validation patients, both pooled
+over all pixels and per patient (mean and standard deviation of Dice across
+the 74 validation volumes, which is how BraTS results normally get
+reported). It also times inference in ms/slice and saves side-by-side
 `FLAIR | ground truth | prediction` images for tumor-containing slices.
 
 ### 3. Compare all trained models
@@ -174,16 +174,17 @@ It also measures inference speed in ms/slice and saves side-by-side
 python3 compare.py
 ```
 
-Prints and saves a markdown table (Dice pooled and per patient, per-class
-Dice, IoU, sensitivity, specificity, params, speed, epochs, s/epoch) plus
-overlaid val-Dice curves for all models. The report tables come from here.
+This writes a markdown table covering pooled and per-patient Dice, per-class
+Dice, IoU, sensitivity, specificity, params, speed, epochs, and s/epoch,
+together with val-Dice curves for all four models on one axis. The tables in
+the report come from here.
 
 ## Outputs
 
 ```text
 outputs/
 └── <model>/
-    ├── best.pth            # best-val-Dice checkpoint (weights + metrics)
+    ├── <model>_best.pth    # best-val-Dice checkpoint (weights + metrics)
     ├── train_log.json      # run config + full per-epoch metrics, written every epoch
     ├── curves.png          # loss + Dice/IoU curves for this run
     ├── test_metrics.json   # from inference.py: pooled + per-patient metrics, params, ms/slice
@@ -194,9 +195,9 @@ outputs/comparison.png      # from compare.py: val Dice curves, all models
 
 ## Results
 
-Scores on the 74 held-out validation patients, best checkpoint per model
-(threshold 0.5). Generated by `python3 compare.py`; full numbers are in
-`outputs/comparison.md` and per-model `test_metrics.json`.
+Scores on the 74 held-out validation patients, best checkpoint per model,
+threshold 0.5. Produced by `python3 compare.py`; the full numbers sit in
+`outputs/comparison.md` and each model's `test_metrics.json`.
 
 | Model | Params (M) | Val Dice | Patient Dice (mean±std) | Dice NCR/NET | Dice ED | Dice ET | IoU | ms/slice | Epochs |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -205,26 +206,59 @@ Scores on the 74 held-out validation patients, best checkpoint per model
 | UNet++ | **9.2** | **0.7976** | **0.7050±0.1732** | 0.7380 | **0.8081** | **0.8466** | **0.6656** | 2.96 | 20 |
 | TransUNet (style) | 64.9 | 0.7799 | 0.6776±0.1802 | 0.7277 | 0.7799 | 0.8322 | 0.6412 | 2.67 | 19 |
 
-What the numbers say:
+UNet++ finishes on top, and it gets there with 9.2M parameters against
+U-Net's 31.0M. The margin is 0.003 patient Dice while the per-patient
+standard deviation is about 0.17, so the three CNNs are better described as
+tied than ranked. What the parameter count buys is efficiency rather than
+accuracy, and UNet++ pays for its nested nodes at inference time, where it
+is the slowest of the four.
 
-- UNet++ gets the best score of the four with 3.4x fewer parameters than
-  U-Net, though it is also the slowest at inference because of its nested
-  intermediate nodes.
-- The three CNNs land within 0.004 patient Dice of each other while the
-  per-patient standard deviation is about 0.17. At this data scale the three
-  should be read as tied; which patients are hard matters far more than
-  which of these architectures you pick.
-- The TransUNet-style model trails by about 0.025 Dice despite having twice
-  the parameters. Trained from scratch on 46k slices, the transformer
-  bottleneck has no pretraining to lean on, which matches the original
-  TransUNet paper's reliance on ImageNet-pretrained weights.
-- The per-class ordering is identical for every model: ET is easiest, then
-  ED, and NCR/NET is hardest.
-- All models trained with early stopping (patience 5) and picked their best
-  checkpoint at epoch 12 to 15. Wall-clock epoch times in the logs are not
-  comparable across models because the GPU was shared with another training
-  job; ms/slice above was measured in a single sequential session and is the
-  fairer speed comparison.
+The attention gates were close to free and did close to nothing: 0.001
+patient Dice over plain U-Net for an extra 0.4M parameters. With only three
+tumor classes on fairly well-centered anatomy, there may not be much
+irrelevant skip content left for a gate to suppress.
+
+The TransUNet-style model is the clearest signal in the table. It has twice
+the parameters of U-Net and scores about 0.025 Dice lower. Trained from
+scratch on 46k slices it has no pretraining to lean on, which lines up with
+the original TransUNet paper leaning on ImageNet-pretrained weights.
+
+Per-class difficulty comes out in the same order for all four models: ET is
+easiest, ED sits in the middle, and NCR/NET is hardest. Every run used early
+stopping with patience 5 and settled on a best checkpoint somewhere between
+epoch 12 and 15. One caveat on speed: the wall-clock epoch times in the logs
+are not comparable across models, because the GPU was shared with an
+unrelated training job at the time. The ms/slice column was measured in one
+sequential session and is the fair comparison.
+
+## Pretrained weights
+
+The training logs, metrics, curves, and prediction images are all committed
+under `outputs/`. The checkpoints are too large for the repository, so they
+live in the
+[v1.0 release](https://github.com/FR13ND-5/brats2020-BRain-Tumor-Segmentation/releases/tag/v1.0)
+instead.
+
+To reproduce the reported scores without retraining, drop a checkpoint into
+the matching output folder and run inference:
+
+```bash
+mkdir -p outputs/unetpp
+curl -L -o outputs/unetpp/unetpp_best.pth \
+  https://github.com/FR13ND-5/brats2020-BRain-Tumor-Segmentation/releases/download/v1.0/unetpp_best.pth
+python3 inference.py --model unetpp
+```
+
+| File | Model | Size |
+| --- | --- | --- |
+| `unet_best.pth` | U-Net | 119 MB |
+| `attention_unet_best.pth` | Attention U-Net | 120 MB |
+| `unetpp_best.pth` | UNet++ | 36 MB |
+| `transunet_best.pth` | TransUNet (style) | 248 MB |
+
+Each file is a `torch.save` dict holding `model`, `epoch`, `state_dict`, and
+`val_metrics`. Load it with `torch.load(path, weights_only=True)` and hand
+`state_dict` to the matching `get_model(name)`.
 
 ## References
 
